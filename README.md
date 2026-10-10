@@ -1,6 +1,6 @@
 # FX Arbitrage Monitor
 
-A small system that looks for **multi-leg FX arbitrage** (triangular and longer loops such as CHF → USD → AUD → CHF) across major currency pairs, using bid/ask quotes and fees. It includes:
+A small system that looks for **multi-leg FX arbitrage** (triangular and longer loops such as CHF → USD → AUD → CHF) across 13 currencies (78 pairs), using bid/ask quotes and fees. It includes:
 
 - a detector built on Bellman-Ford over a currency graph,
 - a replay tool for recorded quote files,
@@ -31,6 +31,20 @@ A small system that looks for **multi-leg FX arbitrage** (triangular and longer 
 4. **Presentation.** The web page shows the cycle as cards with a step-by-step breakdown, plus an interactive diagram of the loop.
 
 The currency universe is USD, EUR, GBP, JPY, CHF, AUD, CAD, NZD, NOK, SEK, SGD, ZAR, and INR: 13 currencies and 78 pairs. Because the detector only uses the best bid and ask for each pair, it is fast: a scan takes about 130 µs for 78 pairs in local tests.
+
+## Supported currencies
+
+| Currency | Name | Currency | Name |
+| --- | --- | --- | --- |
+| USD | US dollar | SGD | Singapore dollar |
+| EUR | Euro | ZAR | South African rand |
+| GBP | Pound sterling | INR | Indian rupee |
+| JPY | Japanese yen | CAD | Canadian dollar |
+| CHF | Swiss franc | NOK | Norwegian krone |
+| AUD | Australian dollar | SEK | Swedish krona |
+| NZD | New Zealand dollar | | |
+
+The simulated feed uses the starting USD values in `START_VALUE` in `fx_arb/synth.py`. To add a currency, add one entry there, add its option to the dropdown in `index.html`, and check that the OANDA account offers its pairs. Pairs the account doesn't offer are skipped.
 
 ## Repository layout
 
@@ -98,7 +112,11 @@ Without `OANDA_TOKEN` and `OANDA_ACCOUNT_ID`, the function falls back to simulat
 
 The live feed asks OANDA which instruments the account offers and keeps the pairs among our 13 currencies. Pairs the account doesn't offer, such as some INR crosses, are skipped automatically. That list is cached for an hour.
 
-**Assumption to verify:** OANDA's liquidity field is treated as units of the base currency. Check this against a real response before trusting `max_notional`.
+**Assumptions to verify against a live response:**
+
+- OANDA's liquidity field is treated as units of the base currency. Check this before trusting `max_notional`.
+- The instrument-list response (`/v3/accounts/{id}/instruments`) is read as a list of objects with `name` and `type` fields, with `type` equal to `CURRENCY`. This is from OANDA's documentation, not a live response. If the live scan returns no pairs, check this first.
+- Which of the 13 currencies have pairs on OANDA. INR and some others may not be offered, so they may be skipped on the live feed.
 
 ## Deploying to Vercel
 
@@ -122,7 +140,8 @@ Add the OANDA variables under the project's environment settings (or with `npx v
 - Simulated data is for demonstration only.
 - No slippage, latency, financing, or transaction-cost model beyond a flat fee per leg.
 - No execution layer. Nothing here sends orders.
-- The OANDA liquidity units and the practice-account feed have not been checked against a live production response.
+- The OANDA liquidity units, the instrument-list format, and the set of INR pairs have not been checked against a live response (see Live data above).
+- Currency coverage on the live feed depends on what the account offers.
 
 ## License
 
