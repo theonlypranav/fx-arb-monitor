@@ -1,0 +1,400 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FX Arbitrage Monitor</title>
+  <style>
+    :root {
+      --bg: #f7f7f5; --fg: #1d1d1b; --muted: #6b6b66; --card: #ffffff;
+      --line: #e3e3de; --good: #1f7a4d; --warn: #9a6700; --bad: #b42318;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme="light"]) {
+        --bg: #161614; --fg: #ecece8; --muted: #9b9b94; --card: #1f1f1c;
+        --line: #33332f; --good: #4ade80; --warn: #fbbf24; --bad: #f87171;
+      }
+    }
+    :root[data-theme="dark"] {
+      --bg: #161614; --fg: #ecece8; --muted: #9b9b94; --card: #1f1f1c;
+      --line: #33332f; --good: #4ade80; --warn: #fbbf24; --bad: #f87171;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--fg);
+      font: 15px/1.5 -apple-system, system-ui, "Segoe UI", sans-serif; }
+    main { max-width: 900px; margin: 0 auto; padding: 24px 16px 48px; }
+    h1 { font-size: 22px; margin: 0 0 4px; }
+    .sub { color: var(--muted); margin: 0 0 20px; }
+    .bar { display: flex; flex-wrap: wrap; gap: 12px; align-items: center;
+      background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+      padding: 12px 14px; margin-bottom: 16px; }
+    .pill { font-size: 12px; font-weight: 600; padding: 3px 8px; border-radius: 999px;
+      border: 1px solid var(--line); }
+    .pill.live { color: var(--good); } .pill.sim { color: var(--warn); }
+    .muted { color: var(--muted); font-size: 13px; }
+    .controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-left: auto; }
+    select, button, input.amt { font: inherit; font-size: 14px; padding: 6px 10px; border-radius: 8px;
+      border: 1px solid var(--line); background: var(--card); color: var(--fg); }
+    button { background: var(--fg); color: var(--bg); border-color: var(--fg); cursor: pointer; font-weight: 600; }
+    button:disabled { opacity: .5; cursor: wait; }
+    .intro { font-size: 14px; color: var(--muted); margin: 0 0 14px; }
+    .empty { text-align: center; color: var(--muted); padding: 32px; background: var(--card);
+      border: 1px solid var(--line); border-radius: 12px; }
+
+    .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+      padding: 14px 16px; margin-bottom: 16px; }
+    .card-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; align-items: baseline; }
+    .card-head strong { font-size: 16px; }
+    .amount-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 12px 0; }
+    input.amt { width: 170px; font-variant-numeric: tabular-nums; }
+    .steps { display: grid; gap: 10px; }
+    .step { border: 1px dashed var(--line); border-radius: 10px; padding: 10px 12px; }
+    .step-title { font-weight: 600; margin-bottom: 6px; }
+    .row { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 12px;
+      font-size: 14px; font-variant-numeric: tabular-nums; }
+    .row.total { border-top: 1px solid var(--line); margin-top: 6px; padding-top: 6px; }
+    .check { font-size: 13px; margin-top: 6px; }
+    .ok { color: var(--good); } .warn { color: var(--warn); }
+    .summary { margin-top: 12px; padding: 10px 12px; border-radius: 10px; background: var(--bg); font-size: 14px; }
+    .note { margin-top: 20px; font-size: 13px; color: var(--muted); }
+    .card { cursor: pointer; }
+    .card.selected { border-color: var(--fg); box-shadow: 0 0 0 1px var(--fg) inset; }
+
+    .layout { display: grid; gap: 16px; }
+    .flow-panel { background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+      padding: 14px 16px; margin-bottom: 16px; }
+    .flow-panel h2 { font-size: 15px; margin: 0 0 4px; }
+    .flow-svg { width: 100%; height: auto; display: block; }
+    .flow-svg text { font: 12px -apple-system, system-ui, sans-serif; fill: var(--fg); }
+    .flow-svg .node circle { fill: var(--bg); stroke: var(--fg); stroke-width: 1.5; cursor: pointer; }
+    .flow-svg .node.active circle { fill: var(--fg); }
+    .flow-svg .node.active text.cur { fill: var(--bg); }
+    .flow-svg .node text.cur { font-weight: 700; font-size: 14px; text-anchor: middle; dominant-baseline: central; pointer-events: none; }
+    .flow-svg .node text.held { font-size: 11px; fill: var(--muted); text-anchor: middle; pointer-events: none; }
+    .flow-svg .edge { stroke: var(--muted); stroke-width: 2; fill: none; cursor: pointer; }
+    .flow-svg .edge.active { stroke: var(--good); stroke-width: 3; }
+    /* Wide invisible stroke so a leg is easy to hover or tap. */
+    .flow-svg .hit { stroke: transparent; stroke-width: 18; fill: none; cursor: pointer; }
+    /* Halo in the background colour so labels stay readable where they cross a line. */
+    .flow-svg .edge-label { font-size: 11px; fill: var(--muted); text-anchor: middle; pointer-events: none;
+      paint-order: stroke; stroke: var(--card); stroke-width: 4px; stroke-linejoin: round; }
+    .flow-svg .arrowhead { fill: var(--muted); }
+    .flow-svg .edge.active + .arrowhead, .flow-svg .edge.active ~ .arrowhead { fill: var(--good); }
+    .flow-detail { margin-top: 10px; }
+    .flow-detail .step { margin: 0; }
+    @media (min-width: 900px) {
+      main { max-width: 1140px; }
+      .layout { grid-template-columns: minmax(0, 1fr) 420px; align-items: start; }
+      .flow-panel { position: sticky; top: 16px; margin-bottom: 0; }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <h1>FX Arbitrage Monitor</h1>
+  <p class="sub">Triangular and multi-leg cycles across majors, net of fees.</p>
+
+  <div class="bar">
+    <span id="mode" class="pill">not scanned</span>
+    <span class="muted" id="status">Choose a currency and press Scan.</span>
+    <div class="controls">
+      <label class="muted" for="currency">Preferred currency</label>
+      <select id="currency">
+        <option value="">All currencies</option>
+        <option value="USD">USD</option>
+        <option value="EUR">EUR</option>
+        <option value="GBP">GBP</option>
+        <option value="JPY">JPY</option>
+        <option value="CHF">CHF</option>
+        <option value="AUD">AUD</option>
+      </select>
+      <button id="scan">Scan</button>
+    </div>
+  </div>
+
+  <p class="intro">
+    Each card walks one loop. Type an amount of the starting currency and see, step by step, what you
+    would hold after each conversion at the quoted price, the fee taken, and whether the quoted depth
+    covers it. A positive net means the loop returns more than you started with.
+  </p>
+
+  <div class="layout">
+    <div id="cards"><div class="empty">No scan yet.</div></div>
+    <aside class="flow-panel">
+      <h2>Flow of the selected loop</h2>
+      <p class="muted" style="margin:0 0 6px">Click a card to select it. Hover or tap a leg to see its numbers.</p>
+      <div id="flow"><div class="muted">No opportunity selected.</div></div>
+      <div id="flow-detail" class="flow-detail"></div>
+    </aside>
+  </div>
+
+  <p class="note">
+    Simulated mode uses generated prices and is for demonstration only. Live mode uses OANDA practice
+    quotes. Profit uses top-of-book bid and ask only, before latency, slippage, and execution risk.
+    Nothing here places trades or gives investment advice.
+  </p>
+</main>
+
+<script>
+  const cardsEl = document.getElementById("cards");
+  const modeEl = document.getElementById("mode");
+  const statusEl = document.getElementById("status");
+  const currencyEl = document.getElementById("currency");
+  const scanBtn = document.getElementById("scan");
+  const DEFAULT_AMOUNT = 1000;
+  let opportunities = [];
+  let feeBps = 0;
+
+  const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  // Money: 2 to 4 decimals. Prices and rates need up to 6 significant decimals.
+  const num = (n, max = 2, min = Math.min(2, max)) => Number(n).toLocaleString(undefined, { maximumFractionDigits: max, minimumFractionDigits: min });
+  const base = (pair) => pair.slice(0, 3);
+  const quote = (pair) => pair.slice(3);
+
+  // What one leg does, in plain words, with the quote in conventional form.
+  function legText(leg) {
+    const b = base(leg.pair), q = quote(leg.pair);
+    if (leg.side === "sell") {
+      return {
+        action: `Sell ${b} at the bid, receive ${q}`,
+        quoted: `Bid: 1 ${b} = ${num(leg.price, 6, 4)} ${q}`,
+        effective: `After fee: 1 ${leg.src} = ${num(leg.rate, 6, 4)} ${leg.dst}`,
+      };
+    }
+    return {
+      action: `Buy ${b} at the ask, paying ${q}`,
+      quoted: `Ask: 1 ${b} costs ${num(leg.price, 6, 4)} ${q}`,
+      effective: `After fee: 1 ${leg.src} = ${num(leg.rate, 6, 4)} ${leg.dst}`,
+    };
+  }
+
+  // Walk the loop for an amount. Returns step HTML, the amount held before each leg, and the final amount.
+  function walk(opp, amount) {
+    let held = amount;
+    const amounts = [];
+    const steps = opp.legs.map((leg, i) => {
+      amounts.push(held);
+      const text = legText(leg);
+      // Sell: held is base units, gross quote = held * bid. Buy: held is quote, gross base = held / ask.
+      const gross = leg.side === "sell" ? held * leg.price : held / leg.price;
+      const out = gross * (1 - feeBps / 1e4);
+      const fee = gross - out;
+      const fits = held <= leg.max_src;
+      const html = `
+        <div class="step">
+          <div class="step-title">Step ${i + 1} · ${esc(text.action)}</div>
+          <div class="row"><span>You give</span><b>${num(held)} ${esc(leg.src)}</b></div>
+          <div class="row"><span>${esc(text.quoted)}</span></div>
+          <div class="row"><span>Gross you receive</span><span>${num(gross, 4)} ${esc(leg.dst)}</span></div>
+          <div class="row"><span>Fee (${num(feeBps, 2)} bps)</span><span>−${num(fee, 4)} ${esc(leg.dst)}</span></div>
+          <div class="row total"><span>You now hold</span><b>${num(out)} ${esc(leg.dst)}</b></div>
+          <div class="row"><span class="muted">${esc(text.effective)}</span></div>
+          <div class="check ${fits ? "ok" : "warn"}">
+            Depth at this price: ${num(leg.max_src, 0)} ${esc(leg.src)} ${fits ? "· enough for this amount" : "· amount exceeds quoted depth"}
+          </div>
+        </div>`;
+      held = out;
+      return html;
+    });
+    return { steps, amounts, final: held };
+  }
+
+  function cardHtml(opp, i) {
+    const start = opp.legs[0].src;
+    return `
+      <section class="card" data-i="${i}">
+        <div class="card-head">
+          <strong>Opportunity ${i + 1} · starts and ends in ${esc(start)}</strong>
+          <span class="muted">Net ${num(opp.profit_bps, 2)} bps · max ${num(opp.max_notional, 0)} ${esc(start)}</span>
+        </div>
+        <div class="amount-row">
+          <label class="muted" for="amt-${i}">You start with</label>
+          <input class="amt" id="amt-${i}" type="number" min="0" step="any" value="${DEFAULT_AMOUNT}" data-i="${i}">
+          <span>${esc(start)}</span>
+        </div>
+        <div class="steps" id="steps-${i}"></div>
+        <div class="summary" id="sum-${i}"></div>
+      </section>`;
+  }
+
+  function updateCard(i) {
+    const opp = opportunities[i];
+    const start = opp.legs[0].src;
+    const amount = Number(document.getElementById(`amt-${i}`).value);
+    const stepsEl = document.getElementById(`steps-${i}`);
+    const sumEl = document.getElementById(`sum-${i}`);
+
+    if (!(amount > 0)) {
+      stepsEl.innerHTML = "";
+      sumEl.textContent = "Enter an amount above zero.";
+      return;
+    }
+    const { steps, final } = walk(opp, amount);
+    stepsEl.innerHTML = steps.join("");
+
+    const net = final - amount;
+    const pct = (net / amount) * 100;
+    const over = amount > opp.max_notional
+      ? `<div class="check warn">Above the largest size the quoted depth supports (${num(opp.max_notional, 0)} ${esc(start)}). Expect partial fills.</div>`
+      : "";
+    sumEl.innerHTML = `
+      <div>You start with <b>${num(amount)} ${esc(start)}</b> and end with <b>${num(final)} ${esc(start)}</b>.</div>
+      <div class="${net >= 0 ? "ok" : "warn"}">Net: ${net >= 0 ? "+" : ""}${num(net, 4)} ${esc(start)} (${net >= 0 ? "+" : ""}${num(pct, 4)}%)</div>
+      ${over}`;
+    if (i === selected) drawFlow(i);
+  }
+
+  // ---- Flow diagram: the loop as a ring of currency nodes with arrows for each leg ----
+  const flowEl = document.getElementById("flow");
+  const flowDetailEl = document.getElementById("flow-detail");
+  let selected = -1;
+  let activeStep = -1;
+  const CX = 200, CY = 200, R = 128;
+
+  function selectCard(i) {
+    selected = i;
+    document.querySelectorAll(".card").forEach((c) => c.classList.toggle("selected", Number(c.dataset.i) === i));
+    activeStep = -1;
+    drawFlow(i);
+  }
+
+  function drawFlow(i) {
+    flowDetailEl.innerHTML = "";
+    if (i < 0 || !opportunities[i]) {
+      flowEl.innerHTML = '<div class="muted">No opportunity selected.</div>';
+      return;
+    }
+    const opp = opportunities[i];
+    const amountEl = document.getElementById(`amt-${i}`);
+    const amount = amountEl ? Number(amountEl.value) : 0;
+    const walked = amount > 0 ? walk(opp, amount) : null;
+    const n = opp.legs.length;
+    const pos = opp.legs.map((_, k) => {
+      const a = -Math.PI / 2 + (2 * Math.PI * k) / n;
+      return { x: CX + R * Math.cos(a), y: CY + R * Math.sin(a) };
+    });
+
+    let edges = "", nodes = "";
+    opp.legs.forEach((leg, k) => {
+      const a = pos[k], b = pos[(k + 1) % n];
+      // Control point pulled toward the centre so each arrow curves inward.
+      const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+      const cx = mx + (CX - mx) * 0.45, cy = my + (CY - my) * 0.45;
+      const d = `M${a.x.toFixed(1)},${a.y.toFixed(1)} Q${cx.toFixed(1)},${cy.toFixed(1)} ${b.x.toFixed(1)},${b.y.toFixed(1)}`;
+      // Midpoint of the quadratic curve, where the label sits.
+      const mxc = 0.25 * a.x + 0.5 * cx + 0.25 * b.x, myc = 0.25 * a.y + 0.5 * cy + 0.25 * b.y;
+      // Move the label 22px outward from the centre so it sits beside the line, not on it.
+      const outLen = Math.hypot(mxc - CX, myc - CY) || 1;
+      const lx = mxc + ((mxc - CX) / outLen) * 22, ly = myc + ((myc - CY) / outLen) * 22;
+      const active = k === activeStep ? " active" : "";
+      const rateText = `×${num(leg.rate, 6, 4)}`;
+      edges += `
+        <g class="leg" data-k="${k}">
+          <path class="hit" d="${d}"></path>
+          <path class="edge${active}" d="${d}" data-k="${k}" marker-end="url(#arrow)"></path>
+          <text class="edge-label" x="${lx.toFixed(1)}" y="${(ly - 6).toFixed(1)}">${esc(leg.side === "sell" ? "sell" : "buy")} ${esc(leg.pair)}</text>
+          <text class="edge-label" x="${lx.toFixed(1)}" y="${(ly + 8).toFixed(1)}">${esc(rateText)}</text>
+        </g>`;
+      // Node k is where leg k starts. The amount held there is shown just below the node.
+      const nodeLen = Math.hypot(a.x - CX, a.y - CY) || 1;
+      const ox = CX + ((a.x - CX) / nodeLen) * (nodeLen + 46), oy = CY + ((a.y - CY) / nodeLen) * (nodeLen + 46);
+      const nodeActive = k === activeStep || (activeStep >= 0 && (k === (activeStep + 1) % n)) ? " active" : "";
+      const held = walked ? `${num(walked.amounts[k], 2)}` : "";
+      nodes += `
+        <g class="node${nodeActive}" data-k="${k}">
+          <circle cx="${a.x.toFixed(1)}" cy="${a.y.toFixed(1)}" r="24"></circle>
+          <text class="cur" x="${a.x.toFixed(1)}" y="${a.y.toFixed(1)}">${esc(leg.src)}</text>
+          <text class="held" x="${ox.toFixed(1)}" y="${oy.toFixed(1)}">${esc(held)}</text>
+        </g>`;
+    });
+
+    flowEl.innerHTML = `
+      <svg class="flow-svg" viewBox="0 0 400 400" role="img" aria-label="Arbitrage loop ${esc(opp.path || "")}">
+        <defs>
+          <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" class="arrowhead"></path>
+          </marker>
+        </defs>
+        ${edges}
+        ${nodes}
+      </svg>
+      <div class="muted" style="text-align:center;margin-top:4px">
+        ${walked ? `Start ${num(amount)} ${esc(opp.legs[0].src)} → end ${num(walked.final)} ${esc(opp.legs[0].src)}` : "Enter an amount above zero to see the amounts."}
+      </div>`;
+
+    flowEl.querySelectorAll(".leg, .node").forEach((el) => {
+      const k = Number(el.dataset.k);
+      el.addEventListener("pointerenter", () => selectStep(i, k));
+      el.addEventListener("click", () => selectStep(i, k));
+    });
+
+    if (activeStep >= 0) showStep(i, activeStep);
+  }
+
+  // Highlight leg k and show its step numbers. Hover or click both work.
+  function selectStep(i, k) {
+    if (activeStep === k) return;
+    activeStep = k;
+    drawFlow(i);
+  }
+
+  function showStep(i, k) {
+    const amountEl = document.getElementById(`amt-${i}`);
+    const amount = amountEl ? Number(amountEl.value) : 0;
+    if (!(amount > 0)) return;
+    flowDetailEl.innerHTML = walk(opportunities[i], amount).steps[k];
+  }
+
+  function render(data) {
+    modeEl.textContent = data.mode === "live" ? "LIVE · OANDA practice" : "SIMULATED";
+    modeEl.className = "pill " + (data.mode === "live" ? "live" : "sim");
+    statusEl.textContent = `${data.pairs} pairs · updated ${new Date().toLocaleTimeString()}`;
+    feeBps = data.fee_bps_per_leg;
+    opportunities = data.opportunities;
+
+    if (!opportunities.length) {
+      const scope = data.currency ? ` involving ${data.currency}` : "";
+      cardsEl.innerHTML = `<div class="empty">No opportunities${esc(scope)} above threshold right now.</div>`;
+      selected = -1;
+      drawFlow(-1);
+      return;
+    }
+    cardsEl.innerHTML = opportunities.map(cardHtml).join("");
+    opportunities.forEach((_, i) => updateCard(i));
+    selectCard(0);
+  }
+
+  // Clicking anywhere on a card (including its amount box) selects it for the flow panel.
+  cardsEl.addEventListener("click", (e) => {
+    const card = e.target.closest(".card");
+    if (card) selectCard(Number(card.dataset.i));
+  });
+
+  // Recalculate a card as the amount changes. No new API call.
+  cardsEl.addEventListener("input", (e) => {
+    if (e.target.classList.contains("amt")) updateCard(Number(e.target.dataset.i));
+  });
+
+  async function scan() {
+    const currency = currencyEl.value;
+    const url = "/api/scan" + (currency ? `?currency=${encodeURIComponent(currency)}` : "");
+    scanBtn.disabled = true;
+    statusEl.textContent = "Scanning…";
+    try {
+      const res = await fetch(url, { cache: "no-store" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || res.statusText);
+      render(data);
+    } catch (err) {
+      modeEl.textContent = "ERROR";
+      modeEl.className = "pill";
+      statusEl.textContent = "Feed unavailable: " + err.message;
+    } finally {
+      scanBtn.disabled = false;
+    }
+  }
+
+  scanBtn.addEventListener("click", scan);
+</script>
+</body>
+</html>
