@@ -8,26 +8,42 @@ from __future__ import annotations
 
 import json
 import os
+import time
 import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
 
 from .quotes import Quote
+from .synth import CURRENCIES
 
 HOSTS = {
     "practice": "https://api-fxpractice.oanda.com",
     "live": "https://api-fxtrade.oanda.com",
 }
 
-# Every cross among the majors, in market-convention order. OANDA rejects names like USD_EUR,
-# so this list can't be built from synth.CURRENCIES, which puts USD first.
-INSTRUMENTS = [
-    "EUR_USD", "GBP_USD", "AUD_USD", "USD_JPY", "USD_CHF",
-    "EUR_GBP", "EUR_JPY", "EUR_CHF", "EUR_AUD",
-    "GBP_JPY", "GBP_CHF", "GBP_AUD",
-    "AUD_JPY", "AUD_CHF",
-    "CHF_JPY",
-]
+# Cache of the account's instrument names. OANDA's list changes rarely.
+_instrument_cache: dict = {"at": 0.0, "names": None}
+INSTRUMENT_TTL_S = 3600
+
+
+def available_instruments(token: str, account_id: str, env: str = "practice", timeout: float = 5.0) -> list[str]:
+    """Names of the currency pairs this account can price, e.g. ["EUR_USD", "USD_JPY", ...]."""
+    now = time.time()
+    if _instrument_cache["names"] is not None and now - _instrument_cache["at"] < INSTRUMENT_TTL_S:
+        return _instrument_cache["names"]
+    url = f"{HOSTS[env]}/v3/accounts/{account_id}/instruments"
+    request = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        payload = json.load(response)
+    names = [i["name"] for i in payload.get("instruments", []) if i.get("type") == "CURRENCY"]
+    _instrument_cache.update(at=now, names=names)
+    return names
+
+
+def instruments_for(available: list[str], currencies: list[str]) -> list[str]:
+    """Keep the pairs where both currencies are in our list. Pairs OANDA doesn't offer drop out."""
+    wanted = set(currencies)
+    return [name for name in available if len(name.split("_")) == 2 and set(name.split("_")) <= wanted]
 
 
 def _parse_time(value: str) -> float:
@@ -64,7 +80,10 @@ def parse_pricing(payload: dict) -> list[Quote]:
 
 
 def fetch_quotes(token: str, account_id: str, env: str = "practice", timeout: float = 5.0) -> list[Quote]:
-    params = urllib.parse.urlencode({"instruments": ",".join(INSTRUMENTS)})
+    names = instruments_for(available_instruments(token, account_id, env, timeout), CURRENCIES)
+    if not names:
+        raise RuntimeError("account offers no pairs among the configured currencies")
+    params = urllib.parse.urlencode({"instruments": ",".join(names)})
     url = f"{HOSTS[env]}/v3/accounts/{account_id}/pricing?{params}"
     request = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})
     with urllib.request.urlopen(request, timeout=timeout) as response:

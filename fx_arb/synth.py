@@ -12,8 +12,13 @@ import random
 
 from .quotes import Quote, write_quotes_csv
 
+# USD value of one unit of each currency, also the starting point of each random walk.
+START_VALUE = {
+    "USD": 1.0, "EUR": 1.10, "GBP": 1.27, "JPY": 0.0067, "CHF": 1.12, "AUD": 0.65,
+    "CAD": 0.73, "NZD": 0.61, "SGD": 0.74, "INR": 0.012, "NOK": 0.094, "SEK": 0.095, "ZAR": 0.053,
+}
 # Pairs quoted by the generator: every cross among these currencies.
-CURRENCIES = ["USD", "EUR", "GBP", "JPY", "CHF", "AUD"]
+CURRENCIES = list(START_VALUE)
 PAIRS = [(a, b) for i, a in enumerate(CURRENCIES) for b in CURRENCIES[i + 1 :]]
 
 
@@ -21,7 +26,7 @@ def generate(ticks: int, seed: int = 0, spread_bps: float = 0.5, inject_every: i
              inject_bps: float = 12.0) -> list[Quote]:
     rng = random.Random(seed)
     # USD value of one unit of each currency (USD = 1). Random walk on each.
-    value = {"USD": 1.0, "EUR": 1.10, "GBP": 1.27, "JPY": 0.0067, "CHF": 1.12, "AUD": 0.65}
+    value = dict(START_VALUE)
     quotes: list[Quote] = []
     ts = 1_700_000_000.0
 

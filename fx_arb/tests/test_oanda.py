@@ -1,4 +1,5 @@
-from fx_arb.oanda import INSTRUMENTS, parse_pricing
+from fx_arb.oanda import instruments_for, parse_pricing
+from fx_arb.synth import CURRENCIES
 
 # Shaped like OANDA's /v3/accounts/{id}/pricing response.
 SAMPLE = {
@@ -44,9 +45,13 @@ def test_parse_handles_nanosecond_timestamps():
     assert abs(q.ts - expected) < 1e-6
 
 
-def test_instruments_cover_all_crosses():
-    # 6 majors give 15 unordered pairs. Each must appear once, in either order.
-    assert len(INSTRUMENTS) == 15
-    unordered = {frozenset(name.split("_")) for name in INSTRUMENTS}
-    assert len(unordered) == 15
-    assert "USD_EUR" not in INSTRUMENTS
+def test_instruments_keep_only_pairs_among_our_currencies():
+    available = ["EUR_USD", "USD_INR", "XAU_USD", "EUR_SGD", "USD_EUR_X", "BTC_USD"]
+    names = instruments_for(available, CURRENCIES)
+    assert names == ["EUR_USD", "USD_INR", "EUR_SGD"]
+
+
+def test_currency_universe_is_thirteen_with_78_pairs():
+    assert len(CURRENCIES) == 13
+    assert len(instruments_for(
+        [f"{a}_{b}" for i, a in enumerate(CURRENCIES) for b in CURRENCIES[i + 1:]], CURRENCIES)) == 78

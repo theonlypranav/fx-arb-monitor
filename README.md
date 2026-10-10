@@ -30,7 +30,7 @@ A small system that looks for **multi-leg FX arbitrage** (triangular and longer 
 3. **Pricing.** Each cycle is walked with a starting amount to get the profit in basis points and the largest notional the top-of-book depth supports.
 4. **Presentation.** The web page shows the cycle as cards with a step-by-step breakdown, plus an interactive diagram of the loop.
 
-Because the detector only uses the best bid and ask for each pair, it is fast: a scan of 15 pairs takes roughly 25 µs in local tests.
+The currency universe is USD, EUR, GBP, JPY, CHF, AUD, CAD, NZD, NOK, SEK, SGD, ZAR, and INR: 13 currencies and 78 pairs. Because the detector only uses the best bid and ask for each pair, it is fast: a scan takes about 130 µs for 78 pairs in local tests.
 
 ## Repository layout
 
@@ -95,6 +95,8 @@ The live feed uses [OANDA's v20 REST API](https://developer.oanda.com/rest-live-
 | `MAX_AGE_S` | no | Ignore quotes older than this many seconds (default `5`) |
 
 Without `OANDA_TOKEN` and `OANDA_ACCOUNT_ID`, the function falls back to simulated data. The page labels which mode it is in.
+
+The live feed asks OANDA which instruments the account offers and keeps the pairs among our 13 currencies. Pairs the account doesn't offer, such as some INR crosses, are skipped automatically. That list is cached for an hour.
 
 **Assumption to verify:** OANDA's liquidity field is treated as units of the base currency. Check this against a real response before trusting `max_notional`.
 
